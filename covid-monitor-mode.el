@@ -51,7 +51,7 @@
     (erase-buffer)
     (make-process :name "covid-data-fetcher"
                   :buffer covid-monitor-data-buffer
-                  :command (list "curl" "--get"
+                  :command (list "curl" "-s"
                                  "https://ncovdata.market.alicloudapi.com/ncov/cityDiseaseInfoWithTrend"
                                  "-H" (format "Authorization: APPCODE %s" covid-monitor-alicloud-api-appcode))
                   :sentinel (lambda (process event)
