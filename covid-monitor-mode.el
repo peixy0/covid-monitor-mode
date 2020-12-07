@@ -1,6 +1,7 @@
 (require 'json)
 
 (defvar covid-monitor-data-buffer "*covid-data*")
+(defvar covid-monitor-require-feedback t)
 (defvar covid-monitor-status-string "")
 (defvar covid-monitor-update-timer nil)
 
@@ -46,6 +47,15 @@
         (setq covid-monitor-status-string (covid-monitor-format-covid-status-string country-count province-count-list))
         (force-mode-line-update 'all)))))
 
+(defun covid-monitor-callback (process event)
+  (when (not (process-live-p process))
+    (let ((exit-code (process-exit-status process)))
+      (if (= 0 exit-code)
+          (covid-monitor-extract-covid-data)
+        (when covid-montor-require-feedback
+          (setq covid-monitor-require-feedback nil)
+          (setq covid-monitor-status-string (format "Fetching COVID-19 data failed: %d" exit-code)))))))
+
 (defun covid-monitor-covid-data-update ()
   (with-current-buffer (get-buffer-create covid-monitor-data-buffer)
     (erase-buffer)
@@ -54,9 +64,13 @@
                   :command (list "curl" "-s"
                                  "https://ncovdata.market.alicloudapi.com/ncov/cityDiseaseInfoWithTrend"
                                  "-H" (format "Authorization: APPCODE %s" covid-monitor-alicloud-api-appcode))
-                  :sentinel (lambda (process event)
-                              (when (string-prefix-p "finished" event)
-                                (covid-monitor-extract-covid-data))))))
+                  :sentinel #'covid-monitor-callback)))
+
+(defun covid-monitor-force-update ()
+  (interactive)
+  (setq covid-monitor-status-string "Fetching COVID-19 data...")
+  (setq covid-monitor-require-feedback t)
+  (covid-monitor-covid-data-update))
 
 (define-minor-mode covid-monitor-mode
   "covid-monitor-mode"
