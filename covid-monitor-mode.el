@@ -52,7 +52,7 @@
     (let ((exit-code (process-exit-status process)))
       (if (= 0 exit-code)
           (covid-monitor-extract-covid-data)
-        (when covid-montor-require-feedback
+        (when covid-monitor-require-feedback
           (setq covid-monitor-require-feedback nil)
           (setq covid-monitor-status-string (format "Fetching COVID-19 data failed: %d" exit-code)))))))
 
