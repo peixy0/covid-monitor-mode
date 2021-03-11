@@ -18,10 +18,9 @@
   :type '(repeat string))
 
 (defun covid-monitor-format-covid-status-string (country-count province-count-list)
-  (string-join (cons (format "COVID-19 全国 %d" country-count)
-                     (cl-mapcar (lambda (p count) (format "%s %d" p count))
-                                covid-monitor-province-list province-count-list))
-               " "))
+  (apply 'cl-concatenate 'string (format "COVID-19 全国 %d" country-count)
+         (cl-mapcar (lambda (p count) (format " %s %d" p count))
+                    covid-monitor-province-list province-count-list)))
 
 (defun covid-monitor-extract-province-data (province-data province)
   (gethash "totalConfirmed"
@@ -29,7 +28,7 @@
                        province-data)))
 
 (defun covid-monitor-extract-province-data-list (raw-data)
-  (mapcar (lambda (x) (covid-monitor-extract-province-data (gethash "provinceArray" raw-data) x))
+  (cl-mapcar (lambda (x) (covid-monitor-extract-province-data (gethash "provinceArray" raw-data) x))
           covid-monitor-province-list))
 
 (defun covid-monitor-extract-country-data (raw-data)
