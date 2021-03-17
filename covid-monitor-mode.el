@@ -17,55 +17,48 @@
   "list of provinces to monitor"
   :type '(repeat string))
 
-(cl-defstruct covid-stat total imported)
-
-(defun covid-monitor-format-covid-stat (covid-stat)
-  (let ((total (covid-stat-total covid-stat))
-        (imported (covid-stat-imported covid-stat)))
-    (if (= 0 imported)
-        (format "%d" total)
-      (format "%d(%d)" total imported))))
-
-(defun covid-monitor-format-covid-status-string (country-stat province-stat-list)
-  (apply 'cl-concatenate 'string (format "COVID-19 全国 %s" (covid-monitor-format-covid-stat country-stat))
-         (cl-mapcar (lambda (p stat) (format " %s %s" p (covid-monitor-format-covid-stat stat)))
-                    covid-monitor-province-list province-stat-list)))
-
-(defun covid-monitor-extract-stat (stat-data)
-  (if (not stat-data) 0
-    (let ((confirmed (gethash "totalConfirmed" stat-data))
-          (doubtful (gethash "totalDoubtful" stat-data))
-          (cured (gethash "totalCured" stat-data))
-          (death (gethash "totalDeath" stat-data)))
+(defun covid-monitor-calculate-count (statistics)
+  (if (not statistics) 0
+    (let ((confirmed (gethash "totalConfirmed" statistics))
+          (doubtful (gethash "totalDoubtful" statistics))
+          (cured (gethash "totalCured" statistics))
+          (death (gethash "totalDeath" statistics)))
       (- (+ confirmed doubtful) (+ cured death)))))
 
-(defun covid-monitor-find-data (data-list key)
+(defun covid-monitor-find-child (data-list key)
   (cl-find-if (lambda (x) (equal key (gethash "childStatistic" x)))
               data-list))
 
-(defun covid-monitor-extract-province-data (province-data-list province)
-  (let* ((province-data (covid-monitor-find-data province-data-list province))
-         (city-data-list (gethash "cityArray" province-data))
-         (imported-data (covid-monitor-find-data city-data-list "境外输入")))
-    (make-covid-stat :total (covid-monitor-extract-stat province-data) :imported (covid-monitor-extract-stat imported-data))))
+(defun covid-monitor-extract-province-imported-count (province-data)
+  (covid-monitor-calculate-count (covid-monitor-find-child (gethash "cityArray" province-data) "境外输入")))
 
-(defun covid-monitor-extract-province-data-list (raw-data)
-  (let ((province-data-list (gethash "provinceArray" raw-data)))
-    (cl-mapcar (lambda (x) (covid-monitor-extract-province-data province-data-list x))
-               covid-monitor-province-list)))
+(defun covid-monitor-extract-total-imported-count (covid-raw-data)
+  (apply '+ (cl-mapcar 'covid-monitor-extract-province-imported-count
+                       (gethash "provinceArray" covid-raw-data))))
 
-(defun covid-monitor-extract-total-imported-stat (province-data-list)
-  (apply '+ (cl-mapcar (lambda (province-data)
-                         (let* ((city-data-list (gethash "cityArray" province-data))
-                                (imported-data (covid-monitor-find-data city-data-list "境外输入")))
-                           (covid-monitor-extract-stat imported-data)))
-                       province-data-list)))
+(defun covid-monitor-format-imported-count (imported-count)
+  (if (= 0 imported-count) ""
+    (format "(%d)" imported-count)))
 
-(defun covid-monitor-extract-country-data (raw-data)
-  (let* ((country-stat (covid-monitor-extract-stat (gethash "country" raw-data)))
-         (province-data-list (gethash "provinceArray" raw-data))
-         (imported-stat (covid-monitor-extract-total-imported-stat province-data-list)))
-    (make-covid-stat :total country-stat :imported imported-stat)))
+(defun covid-monitor-format-total-data (covid-raw-data)
+  (format " %d%s"
+          (covid-monitor-calculate-count (gethash "country" covid-raw-data))
+          (covid-monitor-format-imported-count (covid-monitor-extract-total-imported-count covid-raw-data))))
+
+(defun covid-monitor-format-province-data (province-data)
+  (format " %s %d%s"
+          (gethash "childStatistic" province-data)
+          (covid-monitor-calculate-count province-data)
+          (covid-monitor-format-imported-count (covid-monitor-extract-province-imported-count province-data))))
+
+(defun covid-monitor-extract-province-data-list (covid-raw-data)
+  (let ((province-data-list (gethash "provinceArray" covid-raw-data)))
+    (cl-mapcar (lambda (x) (covid-monitor-find-child province-data-list x)) covid-monitor-province-list)))
+
+(defun covid-monitor-format-covid-status-string (covid-raw-data)
+  (let ((province-data-list (covid-monitor-extract-province-data-list covid-raw-data)))
+    (apply 'cl-concatenate 'string "COVID-19 全国" (covid-monitor-format-total-data covid-raw-data)
+           (cl-mapcar 'covid-monitor-format-province-data province-data-list))))
 
 (defun covid-monitor-extract-covid-data ()
   (with-current-buffer (get-buffer-create covid-monitor-data-buffer)
@@ -73,10 +66,8 @@
       (let* ((json-object-type 'hash-table)
              (json-array-type 'list)
              (json-key-type 'string)
-             (covid-raw-data (json-read-from-string (buffer-string)))
-             (country-stat (covid-monitor-extract-country-data covid-raw-data))
-             (province-stat-list (covid-monitor-extract-province-data-list covid-raw-data)))
-        (setq covid-monitor-status-string (covid-monitor-format-covid-status-string country-stat province-stat-list))
+             (covid-raw-data (json-read-from-string (buffer-string))))
+        (setq covid-monitor-status-string (covid-monitor-format-covid-status-string covid-raw-data))
         (force-mode-line-update 'all)))))
 
 (defun covid-monitor-fetcher-callback (process event)
