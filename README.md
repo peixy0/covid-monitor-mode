@@ -1,3 +1,6 @@
+# 2/7/2022 update 停止维护
+阿里云市场中的疫情数据 API 已停止维护，找到新的可用数据 API 前插件无法使用
+
 # Covid Monitor Mode ![wftpl](http://www.wtfpl.net/wp-content/uploads/2012/12/wtfpl-badge-4.png)
 
 ![Preview](screenshot.png)
