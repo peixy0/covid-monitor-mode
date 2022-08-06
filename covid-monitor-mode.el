@@ -1,8 +1,6 @@
 (require 'json)
 
 (defvar covid-monitor-data-buffer "*covid-data-raw*")
-(defvar covid-monitor-data-anchor-start "try { window.getAreaStat = ")
-(defvar covid-monitor-data-anchor-end "}catch(e){}")
 (defvar covid-monitor-require-feedback t)
 (defvar covid-monitor-status-string "")
 (defvar covid-monitor-update-timer nil)
@@ -19,43 +17,32 @@
   "list of areas to monitor"
   :type '(repeat string))
 
-(defun covid-monitor-extract-area-stat()
-  (goto-char 1)
-  (let* ((anchor-start (search-forward covid-monitor-data-anchor-start))
-         (anchor-end (- (search-forward covid-monitor-data-anchor-end) (length covid-monitor-data-anchor-end))))
-    (buffer-substring-no-properties anchor-start anchor-end)))
+(defun covid-monitor-extract-province-data (json-data area-name)
+  (let* ((data-top-layer (gethash "data" json-data))
+         (data-second-layer (gethash "diseaseh5Shelf" data-top-layer))
+         (data-third-layer (gethash "areaTree" data-second-layer))
+         (country-data (car data-third-layer))
+         (province-data-list (gethash "children" country-data)))
+    (cl-find-if (lambda (x) (equal area-name (gethash "name" x))) province-data-list)))
 
-(defun covid-monitor-find-city-data (city-list area-name)
-  (cl-find-if (lambda (x) (equal area-name (gethash "cityName" x))) city-list))
+(defun covid-monitor-extract-province-data-list (json-data)
+  (cl-mapcar (lambda (x) (covid-monitor-extract-province-data json-data x)) covid-monitor-area-list))
 
-(defun covid-monitor-find-area-data (province-list area-name)
-  (if (not (eq nil province-list))
-      (let ((area (car province-list))
-            (rest (cdr province-list)))
-        (if (equal area-name (gethash "provinceShortName" area))
-            area
-          (let ((city (covid-monitor-find-city-data (gethash "cities" area) area-name)))
-            (if (not (eq nil city))
-                city
-              (covid-monitor-find-area-data rest area-name)))))))
-
-(defun covid-monitor-process-json-data (json-data area-name)
-  (let* ((area (covid-monitor-find-area-data json-data area-name))
-         (cities (gethash "cities" area)))
-    (puthash "areaName" area-name area)
-    area))
-
-(defun covid-monitor-process-raw-data (raw-json)
+(defun covid-monitor-process-raw-data (raw-data)
   (let* ((json-object-type 'hash-table)
          (json-array-type 'list)
          (json-key-type 'string)
-         (extracted-json (json-read-from-string raw-json)))
-    (cl-mapcar (lambda (x) (covid-monitor-process-json-data extracted-json x)) covid-monitor-area-list)))
+         (extracted-json (json-read-from-string raw-data)))
+    extracted-json))
 
-(defun covid-monitor-format-area-data (area)
-  (let ((name (gethash "areaName" area))
-        (currentConfirmed (gethash "currentConfirmedCount" area)))
-    (format "%s %d" name currentConfirmed)))
+(defun covid-monitor-format-area-data (data)
+  (let* ((name (gethash "name" data))
+         (today (gethash "today" data))
+         (confirm-add (gethash "local_confirm_add" today))
+         (wzz-add (gethash "wzz_add" today))
+         (total (gethash "total" data))
+         (confirmed (gethash "nowConfirm" total)))
+    (format "%s %d(+%d|无症状+%d)" name confirmed confirm-add wzz-add)))
 
 (defun covid-monitor-format-message (area-list)
   (format "COVID-19 %s "
@@ -64,9 +51,10 @@
 (defun covid-monitor-process-data ()
   (with-current-buffer (get-buffer-create covid-monitor-data-buffer)
     (when (< 0 (length (buffer-string)))
-      (let* ((raw-json (covid-monitor-extract-area-stat))
-             (processed-data (covid-monitor-process-raw-data raw-json))
-             (message (covid-monitor-format-message processed-data)))
+      (let* ((raw-data (buffer-string))
+             (json-data (covid-monitor-process-raw-data raw-data))
+             (province-data-list (covid-monitor-extract-province-data-list json-data))
+             (message (covid-monitor-format-message province-data-list)))
         (setq covid-monitor-status-string message)
         (force-mode-line-update 'all)))))
 
@@ -85,7 +73,7 @@
     (make-process :name "covid-data-fetcher"
                   :buffer covid-monitor-data-buffer
                   :command (list covid-monitor-curl-path "-s"
-                                 "https://ncov.dxy.cn/ncovh5/view/pneumonia")
+                                 "https://api.inews.qq.com/newsqa/v1/query/inner/publish/modules/list?modules=diseaseh5Shelf")
                   :sentinel #'covid-monitor-fetch-data-callback)))
 
 (defun covid-monitor-force-update ()
